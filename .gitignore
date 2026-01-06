@@ -1,0 +1,4 @@
+/frontend/node_modules/
+/.claude/
+/.venv/
+/jinjiang_novels.db

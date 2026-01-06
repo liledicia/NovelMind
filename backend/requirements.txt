@@ -1,0 +1,21 @@
+# FastAPI Web框架
+fastapi==0.115.0
+uvicorn[standard]==0.32.1
+
+# 数据验证
+pydantic>=2.10.0
+pydantic-settings>=2.6.0
+
+# 爬虫相关（复用现有依赖）
+requests==2.32.5
+beautifulsoup4==4.14.3
+lxml==6.0.2
+
+# 工具库
+python-multipart==0.0.9
+python-dotenv==1.0.0
+typing-extensions==4.15.0
+
+# 测试（可选）
+pytest==7.4.4
+httpx==0.26.0
