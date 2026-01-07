@@ -64,16 +64,17 @@ def calculate_multidimensional_similarity(
     计算两本小说的多维度相似度
 
     基于以下维度计算：
-    1. 标签相似度（默认权重50%）
-    2. 类型匹配（默认权重15%）
-    3. 视角匹配（默认权重15%）
-    4. 状态匹配（默认权重10%）
-    5. 同作者加分（默认权重10%）
+    1. 标签相似度（默认权重55%）
+    2. 类型匹配（默认权重18%）
+    3. 视角匹配（默认权重17%）
+    4. 同作者加分（默认权重10%）
+
+    注：完结状态不计入相似度计算
 
     Args:
         novel1: 第一本小说的字典数据
         novel2: 第二本小说的字典数据
-        weights: 权重配置字典，如 {"tags": 0.5, "category": 0.15, ...}
+        weights: 权重配置字典，如 {"tags": 0.55, "category": 0.18, ...}
 
     Returns:
         tuple: (相似度分数[0-100], 匹配原因列表)
@@ -83,12 +84,11 @@ def calculate_multidimensional_similarity(
         >>> print(f"相似度: {similarity}%")
         >>> print(f"匹配原因: {reasons}")
     """
-    # 默认权重配置
+    # 默认权重配置（完结状态已移除）
     default_weights = {
-        "tags": 0.5,
-        "category": 0.15,
-        "perspective": 0.15,
-        "status": 0.1,
+        "tags": 0.55,
+        "category": 0.18,
+        "perspective": 0.17,
         "author": 0.1
     }
 
@@ -105,32 +105,41 @@ def calculate_multidimensional_similarity(
 
     if tag_sim > 0:
         score += tag_sim * w["tags"]
-        reasons.append(f"标签匹配度: {tag_sim * 100:.0f}%")
+        # 找出共同标签
+        common_tags = list(set(tags1.split()) & set(tags2.split()))
+        if common_tags:
+            # 只显示前2个共同标签
+            tag_display = '、'.join(common_tags[:2])
+            if len(common_tags) > 2:
+                reasons.append(f"共同标签：{tag_display}等")
+            else:
+                reasons.append(f"共同标签：{tag_display}")
 
     # 2. 类型匹配
     if novel1.get("category") and novel2.get("category"):
         if novel1["category"] == novel2["category"]:
             score += w["category"]
-            reasons.append("类型相同")
+            # 提取类型的关键词
+            category = novel2.get("category", "")
+            if category:
+                # 从类型中提取最后一个词作为核心类型
+                parts = category.split('-')
+                core_type = parts[-1] if parts else "相似类型"
+                reasons.append(f"同为{core_type}题材")
 
     # 3. 视角匹配
     if novel1.get("perspective") and novel2.get("perspective"):
         if novel1["perspective"] == novel2["perspective"]:
             score += w["perspective"]
-            reasons.append("视角相同")
+            perspective = novel2.get("perspective", "")
+            reasons.append(f"{perspective}视角叙事")
 
-    # 4. 完结状态匹配
-    if novel1.get("status") and novel2.get("status"):
-        if novel1["status"] == novel2["status"]:
-            score += w["status"]
-            status = novel1["status"]
-            reasons.append(f"同为{status}")
-
-    # 5. 同作者加分
+    # 4. 同作者加分
     if novel1.get("author") and novel2.get("author"):
         if novel1["author"] == novel2["author"]:
             score += w["author"]
-            reasons.append("同作者")
+            author = novel2.get("author", "")
+            reasons.append(f"{author}的其他作品")
 
     # 转换为百分比分数（0-100）
     final_score = score * 100

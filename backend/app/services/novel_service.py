@@ -6,6 +6,34 @@ from datetime import date
 from ..database.connection import get_db_connection
 
 
+def normalize_cover_url(cover_url: str, book_id: int) -> str:
+    """
+    标准化封面URL：将新浪图床URL替换为晋江官方URL
+
+    Args:
+        cover_url: 原始封面URL
+        book_id: 小说ID
+
+    Returns:
+        str: 标准化后的封面URL
+    """
+    if not cover_url:
+        return cover_url
+
+    # 如果是新浪图床URL，替换为晋江官方URL
+    if 'sinaimg.cn' in cover_url or 'sinaimg.com' in cover_url:
+        # 使用晋江官方的动态封面API
+        return f'https://i9-static.jjwxc.net/novelimage.php?novelid={book_id}'
+
+    # 其他图床也可以考虑替换
+    # 例如：腾讯图床、其他不稳定的外部图床
+    if 'qpic.cn' in cover_url:
+        return f'https://i9-static.jjwxc.net/novelimage.php?novelid={book_id}'
+
+    # 晋江官方图床保持不变
+    return cover_url
+
+
 def search_novel_exact(novel_name: str) -> Optional[Dict]:
     """
     在数据库中精确搜索小说（按书名）
@@ -14,28 +42,15 @@ def search_novel_exact(novel_name: str) -> Optional[Dict]:
         novel_name: 小说名称
 
     Returns:
-        dict: 小说完整信息字典（包含book和stats数据），未找到返回None
+        dict: 小说完整信息字典，未找到返回None
     """
     with get_db_connection() as conn:
         cursor = conn.cursor()
 
-        # 联表查询，获取最新的统计数据
+        # 从book表直接查询所有数据
         query = """
-            SELECT
-                b.*,
-                s.review_count, s.favorite_count, s.nutrient_count,
-                s.total_click_count, s.score
-            FROM book b
-            LEFT JOIN (
-                SELECT book_id,
-                       review_count, favorite_count, nutrient_count,
-                       total_click_count, score
-                FROM stats
-                WHERE id IN (
-                    SELECT MAX(id) FROM stats GROUP BY book_id
-                )
-            ) s ON b.book_id = s.book_id
-            WHERE b.title = ?
+            SELECT * FROM book
+            WHERE title = ?
         """
 
         cursor.execute(query, (novel_name,))
@@ -61,21 +76,8 @@ def search_novel_fuzzy(keyword: str, limit: int = 10) -> List[Dict]:
         cursor = conn.cursor()
 
         query = """
-            SELECT
-                b.*,
-                s.review_count, s.favorite_count, s.nutrient_count,
-                s.total_click_count, s.score
-            FROM book b
-            LEFT JOIN (
-                SELECT book_id,
-                       review_count, favorite_count, nutrient_count,
-                       total_click_count, score
-                FROM stats
-                WHERE id IN (
-                    SELECT MAX(id) FROM stats GROUP BY book_id
-                )
-            ) s ON b.book_id = s.book_id
-            WHERE b.title LIKE ? OR b.author LIKE ?
+            SELECT * FROM book
+            WHERE title LIKE ? OR author LIKE ?
             LIMIT ?
         """
 
@@ -99,21 +101,8 @@ def get_novel_by_id(book_id: int) -> Optional[Dict]:
         cursor = conn.cursor()
 
         query = """
-            SELECT
-                b.*,
-                s.review_count, s.favorite_count, s.nutrient_count,
-                s.total_click_count, s.score
-            FROM book b
-            LEFT JOIN (
-                SELECT book_id,
-                       review_count, favorite_count, nutrient_count,
-                       total_click_count, score
-                FROM stats
-                WHERE id IN (
-                    SELECT MAX(id) FROM stats GROUP BY book_id
-                )
-            ) s ON b.book_id = s.book_id
-            WHERE b.book_id = ?
+            SELECT * FROM book
+            WHERE book_id = ?
         """
 
         cursor.execute(query, (book_id,))
@@ -139,41 +128,10 @@ def get_all_novels(exclude_id: Optional[int] = None, limit: Optional[int] = None
         cursor = conn.cursor()
 
         if exclude_id:
-            query = """
-                SELECT
-                    b.*,
-                    s.review_count, s.favorite_count, s.nutrient_count,
-                    s.total_click_count, s.score
-                FROM book b
-                LEFT JOIN (
-                    SELECT book_id,
-                           review_count, favorite_count, nutrient_count,
-                           total_click_count, score
-                    FROM stats
-                    WHERE id IN (
-                        SELECT MAX(id) FROM stats GROUP BY book_id
-                    )
-                ) s ON b.book_id = s.book_id
-                WHERE b.book_id != ?
-            """
+            query = "SELECT * FROM book WHERE book_id != ?"
             params = [exclude_id]
         else:
-            query = """
-                SELECT
-                    b.*,
-                    s.review_count, s.favorite_count, s.nutrient_count,
-                    s.total_click_count, s.score
-                FROM book b
-                LEFT JOIN (
-                    SELECT book_id,
-                           review_count, favorite_count, nutrient_count,
-                           total_click_count, score
-                    FROM stats
-                    WHERE id IN (
-                        SELECT MAX(id) FROM stats GROUP BY book_id
-                    )
-                ) s ON b.book_id = s.book_id
-            """
+            query = "SELECT * FROM book"
             params = []
 
         if limit:
@@ -200,15 +158,27 @@ def insert_novel(novel_data: dict) -> bool:
         with get_db_connection() as conn:
             cursor = conn.cursor()
 
-            # 插入book表
+            # 标准化封面URL（将新浪图床等外部图床替换为晋江官方）
+            book_id = novel_data.get('book_id')
+            original_cover_url = novel_data.get('cover_url')
+            normalized_cover_url = normalize_cover_url(original_cover_url, book_id)
+
+            # 如果URL被替换，记录日志
+            if original_cover_url and normalized_cover_url != original_cover_url:
+                print(f"📷 封面URL已优化: {novel_data.get('title')}")
+                print(f"   原始: {original_cover_url[:80]}...")
+                print(f"   替换: {normalized_cover_url}")
+
+            # 插入book表（包含所有统计数据）
             cursor.execute('''
                 INSERT OR REPLACE INTO book
                 (book_id, title, author, intro, tags, main_chars, support_chars,
                  other_info, category, perspective, series, status, word_count,
-                 publish_status, sign_status, last_update_time, chapter_count)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                 publish_status, sign_status, last_update_time, chapter_count,
+                 review_count, favorite_count, nutrient_count, total_click_count, score, cover_url)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ''', (
-                novel_data.get('book_id'),
+                book_id,
                 novel_data.get('title'),
                 novel_data.get('author'),
                 novel_data.get('intro'),
@@ -224,24 +194,13 @@ def insert_novel(novel_data: dict) -> bool:
                 novel_data.get('publish_status'),
                 novel_data.get('sign_status'),
                 novel_data.get('last_update_time'),
-                novel_data.get('chapter_count')
-            ))
-
-            # 插入stats表
-            cursor.execute('''
-                INSERT INTO stats
-                (book_id, date, review_count, favorite_count, nutrient_count,
-                 total_click_count, score, chapter_count)
-                VALUES (?,?,?,?,?,?,?,?)
-            ''', (
-                novel_data.get('book_id'),
-                date.today().isoformat(),
+                novel_data.get('chapter_count'),
                 novel_data.get('review_count'),
                 novel_data.get('favorite_count'),
                 novel_data.get('nutrient_count'),
                 novel_data.get('total_click_count'),
                 novel_data.get('score'),
-                novel_data.get('chapter_count')
+                normalized_cover_url  # 使用标准化后的URL
             ))
 
             conn.commit()

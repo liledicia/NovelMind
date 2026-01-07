@@ -2,8 +2,10 @@
 API路由 - 小说搜索和推荐
 """
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import Response
 from typing import Optional
 import logging
+import requests
 
 from ..schemas.novel import NovelResponse, NovelStats, NovelDetail
 from ..schemas.recommendation import RecommendationResponse
@@ -157,3 +159,66 @@ async def get_recommendations(
 async def health_check():
     """健康检查端点"""
     return {"status": "healthy", "service": "NovelMind API"}
+
+
+@router.get("/proxy/image")
+async def proxy_image(url: str = Query(..., description="图片URL")):
+    """
+    图片代理接口 - 解决外部图床的CORS问题
+
+    通过后端转发外部图片，避免浏览器CORS限制
+
+    Args:
+        url: 要代理的图片URL
+
+    Returns:
+        图片二进制数据
+    """
+    try:
+        # 只允许代理特定域名的图片（安全考虑）
+        allowed_domains = [
+            'sinaimg.cn',
+            'jjwxc.net',
+            'bmp.ovh',
+            'loli.net',
+            'jd.com',
+            'huluxia.com',
+            'bdstatic.com'
+        ]
+
+        # 检查URL是否来自允许的域名
+        if not any(domain in url for domain in allowed_domains):
+            raise HTTPException(status_code=403, detail="不支持的图片域名")
+
+        # 请求外部图片
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Accept-Encoding': 'gzip, deflate',
+            'Referer': 'https://www.jjwxc.net/',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
+        }
+
+        response = requests.get(url, headers=headers, timeout=10, allow_redirects=True)
+        response.raise_for_status()
+
+        # 返回图片
+        return Response(
+            content=response.content,
+            media_type=response.headers.get('Content-Type', 'image/jpeg'),
+            headers={
+                'Cache-Control': 'public, max-age=86400',  # 缓存1天
+                'Access-Control-Allow-Origin': '*'  # 允许跨域
+            }
+        )
+
+    except requests.RequestException as e:
+        logger.error(f"图片代理失败: {url}, 错误: {str(e)}")
+        raise HTTPException(status_code=404, detail="图片加载失败")
+
+    except Exception as e:
+        logger.error(f"图片代理错误: {str(e)}")
+        raise HTTPException(status_code=500, detail="服务器错误")

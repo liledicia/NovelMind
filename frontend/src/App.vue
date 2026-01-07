@@ -57,26 +57,31 @@ import Home from './views/Home.vue'
 </script>
 
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600;700&family=Noto+Serif+SC:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&display=swap');
 
 :root {
-  /* 主色调 - 绿色清新 */
-  --color-primary: #059669;
-  --color-secondary: #10b981;
-  --color-accent: #34d399;
-  --color-dark: #047857;
-  --color-light: #ecfdf5;
+  /* 莫兰迪蓝粉色调 */
+  --color-primary: #8BA3B5;
+  --color-secondary: #A4B8C4;
+  --color-accent-pink: #D4B5B0;
+  --color-accent-rose: #E5C9C4;
+  --color-dark-blue: #6B8699;
+  --color-light-blue: #C5D5E0;
+  --color-soft-pink: #F0E5E3;
+  --color-warm-beige: #F5F0ED;
 
   /* 文字颜色 */
-  --text-primary: #1a1a1a;
-  --text-secondary: #5a5a5a;
-  --text-muted: #8a8a8a;
+  --text-primary: #2C3E50;
+  --text-secondary: #5D6D7E;
+  --text-muted: #95A5A6;
   --text-light: #ffffff;
+  --text-accent: #8BA3B5;
 
   /* 背景颜色 */
-  --bg-primary: #ffffff;
-  --bg-secondary: #f0fdf4;
-  --bg-card: rgba(255, 255, 255, 0.95);
+  --bg-primary: #FDFBF9;
+  --bg-secondary: #F5F0ED;
+  --bg-card: rgba(253, 251, 249, 0.98);
+  --bg-overlay: rgba(139, 163, 181, 0.03);
 
   /* 间距 */
   --spacing-xs: 0.5rem;
@@ -86,16 +91,18 @@ import Home from './views/Home.vue'
   --spacing-xl: 3rem;
 
   /* 圆角 */
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
 
-  /* 阴影 */
-  --shadow-sm: 0 2px 8px rgba(5, 150, 105, 0.08);
-  --shadow-md: 0 4px 16px rgba(5, 150, 105, 0.12);
-  --shadow-lg: 0 8px 32px rgba(5, 150, 105, 0.16);
-  --shadow-xl: 0 16px 48px rgba(5, 150, 105, 0.2);
+  /* 阴影 - 柔和细腻 */
+  --shadow-sm: 0 2px 12px rgba(139, 163, 181, 0.08);
+  --shadow-md: 0 4px 20px rgba(139, 163, 181, 0.12);
+  --shadow-lg: 0 8px 32px rgba(139, 163, 181, 0.15);
+  --shadow-xl: 0 16px 48px rgba(139, 163, 181, 0.18);
+  --shadow-book: 4px 8px 24px rgba(107, 134, 153, 0.2),
+                 2px 4px 12px rgba(212, 181, 176, 0.1);
 }
 
 * {
@@ -105,7 +112,7 @@ import Home from './views/Home.vue'
 }
 
 #app {
-  font-family: 'Inter', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  font-family: 'DM Sans', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   min-height: 100vh;
@@ -128,7 +135,13 @@ import Home from './views/Home.vue'
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(165deg, #ecfdf5 0%, #d1fae5 30%, #a7f3d0 60%, #6ee7b7 100%);
+  background:
+    linear-gradient(165deg,
+      var(--bg-primary) 0%,
+      var(--color-soft-pink) 30%,
+      var(--color-light-blue) 60%,
+      var(--color-warm-beige) 100%
+    );
 }
 
 .bg-texture {
@@ -138,9 +151,16 @@ import Home from './views/Home.vue'
   right: 0;
   bottom: 0;
   background-image:
-    radial-gradient(circle at 20% 30%, rgba(16, 185, 129, 0.08) 0%, transparent 50%),
-    radial-gradient(circle at 80% 70%, rgba(5, 150, 105, 0.06) 0%, transparent 50%);
-  opacity: 0.6;
+    radial-gradient(circle at 20% 30%, rgba(164, 184, 196, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(212, 181, 176, 0.08) 0%, transparent 50%),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(139, 163, 181, 0.01) 2px,
+      rgba(139, 163, 181, 0.01) 4px
+    );
+  opacity: 0.7;
 }
 
 .floating-shapes {
@@ -156,37 +176,37 @@ import Home from './views/Home.vue'
 .shape {
   position: absolute;
   border-radius: 50%;
-  filter: blur(60px);
-  animation: float 20s ease-in-out infinite;
-  opacity: 0.15;
+  filter: blur(80px);
+  animation: float 25s ease-in-out infinite;
+  opacity: 0.12;
 }
 
 .shape-1 {
-  width: 400px;
-  height: 400px;
-  background: radial-gradient(circle, #10b981 0%, transparent 70%);
-  top: -100px;
-  left: -100px;
+  width: 450px;
+  height: 450px;
+  background: radial-gradient(circle, var(--color-secondary) 0%, transparent 70%);
+  top: -120px;
+  left: -120px;
   animation-delay: 0s;
 }
 
 .shape-2 {
-  width: 500px;
-  height: 500px;
-  background: radial-gradient(circle, #059669 0%, transparent 70%);
-  bottom: -150px;
-  right: -150px;
-  animation-delay: -7s;
+  width: 550px;
+  height: 550px;
+  background: radial-gradient(circle, var(--color-accent-pink) 0%, transparent 70%);
+  bottom: -180px;
+  right: -180px;
+  animation-delay: -8s;
 }
 
 .shape-3 {
-  width: 350px;
-  height: 350px;
-  background: radial-gradient(circle, #34d399 0%, transparent 70%);
-  top: 50%;
+  width: 380px;
+  height: 380px;
+  background: radial-gradient(circle, var(--color-accent-rose) 0%, transparent 70%);
+  top: 45%;
   left: 50%;
   transform: translate(-50%, -50%);
-  animation-delay: -14s;
+  animation-delay: -16s;
 }
 
 @keyframes float {
@@ -210,11 +230,12 @@ import Home from './views/Home.vue'
 }
 
 .app-header {
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(20px) saturate(180%);
-  border-bottom: 1px solid rgba(5, 150, 105, 0.1);
+  background: rgba(253, 251, 249, 0.92);
+  backdrop-filter: blur(24px) saturate(180%);
+  border-bottom: 1px solid rgba(139, 163, 181, 0.12);
   padding: 24px 40px !important;
   height: auto !important;
+  box-shadow: 0 2px 16px rgba(139, 163, 181, 0.06);
 }
 
 .header-content {
@@ -248,25 +269,27 @@ import Home from './views/Home.vue'
 }
 
 .logo-text h1 {
-  font-family: 'Crimson Pro', 'Noto Serif SC', serif;
-  font-size: 36px;
+  font-family: 'Playfair Display', 'Noto Serif SC', serif;
+  font-size: 38px;
   font-weight: 700;
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent-pink) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
   margin: 0;
   line-height: 1.2;
 }
 
 .subtitle {
-  font-family: 'Inter', 'PingFang SC', sans-serif;
-  font-size: 13px;
+  font-family: 'DM Sans', 'PingFang SC', sans-serif;
+  font-size: 12px;
   color: var(--text-secondary);
   font-weight: 400;
-  letter-spacing: 2px;
-  margin-top: 2px;
+  letter-spacing: 3px;
+  margin-top: 4px;
+  text-transform: uppercase;
+  opacity: 0.8;
 }
 
 .header-decoration {
@@ -278,16 +301,16 @@ import Home from './views/Home.vue'
 .deco-line {
   width: 80px;
   height: 2px;
-  background: linear-gradient(90deg, transparent 0%, var(--color-secondary) 50%, transparent 100%);
+  background: linear-gradient(90deg, transparent 0%, var(--color-accent-pink) 50%, transparent 100%);
   animation: lineGlow 2s ease-in-out infinite;
 }
 
 @keyframes lineGlow {
   0%, 100% {
-    opacity: 0.5;
+    opacity: 0.4;
   }
   50% {
-    opacity: 1;
+    opacity: 0.9;
   }
 }
 
@@ -300,9 +323,9 @@ import Home from './views/Home.vue'
 }
 
 .app-footer {
-  background: rgba(5, 150, 105, 0.03);
+  background: rgba(139, 163, 181, 0.04);
   backdrop-filter: blur(10px);
-  border-top: 1px solid rgba(5, 150, 105, 0.08);
+  border-top: 1px solid rgba(139, 163, 181, 0.1);
   padding: 24px 40px !important;
   height: auto !important;
 }
@@ -324,7 +347,7 @@ import Home from './views/Home.vue'
 }
 
 .footer-brand {
-  font-family: 'Crimson Pro', serif;
+  font-family: 'Playfair Display', serif;
   font-weight: 600;
   color: var(--color-primary);
   font-size: 16px;

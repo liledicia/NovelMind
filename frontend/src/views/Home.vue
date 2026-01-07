@@ -117,6 +117,7 @@ const recommendations = ref([])
 const searchResult = ref(null)
 const error = ref(null)
 const loadingMessage = ref('正在搜索...')
+const recommendationsLoaded = ref(false) // 新增：跟踪推荐是否已加载
 
 const searchHint = computed(() => {
   if (loading.value) {
@@ -141,7 +142,17 @@ const alertClass = computed(() => {
 
 const alertMessage = computed(() => {
   if (searchResult.value?.source === 'database') {
+    // 根据推荐是否加载完成显示不同的消息
+    if (recommendationsLoaded.value && recommendations.value.length > 0) {
+      return `已找到小说《${currentNovel.value?.title}》，为你推荐了 ${recommendations.value.length} 本相似小说`
+    } else if (recommendationsLoaded.value && recommendations.value.length === 0) {
+      return `已找到小说《${currentNovel.value?.title}》，暂无推荐数据`
+    }
     return `已找到小说《${currentNovel.value?.title}》，正在生成推荐...`
+  }
+  // 实时爬取的情况
+  if (recommendationsLoaded.value && recommendations.value.length > 0) {
+    return `成功爬取《${currentNovel.value?.title}》的最新数据，为你推荐了 ${recommendations.value.length} 本相似小说`
   }
   return `成功爬取《${currentNovel.value?.title}》的最新数据并保存到数据库`
 })
@@ -152,6 +163,7 @@ const handleSearch = async (query) => {
   currentNovel.value = null
   recommendations.value = []
   searchResult.value = null
+  recommendationsLoaded.value = false // 重置推荐加载状态
   loadingMessage.value = '正在搜索小说...'
 
   try {
@@ -177,10 +189,14 @@ const handleSearch = async (query) => {
 
         if (recResponse.success && recResponse.data.recommendations) {
           recommendations.value = recResponse.data.recommendations
+          recommendationsLoaded.value = true // 标记推荐已加载
           ElMessage.success(`为你推荐了 ${recResponse.data.recommendations.length} 本相似小说`)
+        } else {
+          recommendationsLoaded.value = true // 即使没有推荐也标记为已完成
         }
       } catch (recError) {
         console.error('获取推荐失败:', recError)
+        recommendationsLoaded.value = true // 出错也标记为已完成
         ElMessage.warning('推荐功能暂时不可用')
       }
     }
