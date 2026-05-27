@@ -49,88 +49,56 @@ def fetch_cover_if_missing(novel: Dict) -> Dict:
 
 
 def get_recommendations(
-    book_id: int,
+    target_novel: Dict,
     limit: int = 10,
     weights: Optional[dict] = None
 ) -> List[Dict]:
     """
-    基于指定小说ID推荐相似作品
+    基于目标小说推荐相似作品。
 
     Args:
-        book_id: 目标小说ID
+        target_novel: 已查询好的目标小说字典（调用方负责查询，避免重复 DB 往返）
         limit: 推荐数量（默认10本）
         weights: 自定义相似度权重配置
 
     Returns:
-        List[dict]: 推荐小说列表，每个小说包含:
-            - 所有小说字段
-            - similarity_score: 相似度分数 (0-100)
-            - match_reasons: 匹配原因列表
-
-    Raises:
-        ValueError: 目标小说不存在
+        List[dict]: 推荐小说列表，每项含 similarity_score 和 match_reasons
     """
-    # 1. 获取目标小说
-    target_novel = get_novel_by_id(book_id)
-
-    if not target_novel:
-        raise ValueError(f"小说ID {book_id} 不存在")
-
-    # 2. 获取所有候选小说（排除目标小说自己）
+    book_id = target_novel["book_id"]
     candidate_novels = get_all_novels(exclude_id=book_id)
 
-    # 3. 计算每本小说的相似度
     recommendations = []
-
     for candidate in candidate_novels:
         similarity_score, match_reasons = calculate_multidimensional_similarity(
             target_novel,
             candidate,
             weights
         )
-
-        # 只推荐有一定相似度的小说（相似度>0）
         if similarity_score > 0:
             recommendations.append({
-                **candidate,  # 包含所有小说字段
+                **candidate,
                 "similarity_score": round(similarity_score, 2),
                 "match_reasons": match_reasons,
                 "url": f"https://www.jjwxc.net/onebook.php?novelid={candidate['book_id']}"
             })
 
-    # 4. 按相似度降序排序
     recommendations.sort(key=lambda x: x["similarity_score"], reverse=True)
-
-    # 5. 返回Top-K推荐
-    top_recommendations = recommendations[:limit]
-
-    # 6. 检查并爬取缺失的封面
-    for i, rec in enumerate(top_recommendations):
-        top_recommendations[i] = fetch_cover_if_missing(rec)
-
-    return top_recommendations
+    return recommendations[:limit]
 
 
 def get_recommendation_summary(book_id: int, limit: int = 10) -> Dict:
     """
-    获取推荐摘要（包含目标小说和推荐列表）
+    获取推荐摘要（包含目标小说和推荐列表）。
 
-    Args:
-        book_id: 目标小说ID
-        limit: 推荐数量
-
-    Returns:
-        dict: {
-            "target_novel": {...},  # 目标小说信息
-            "recommendations": [...]  # 推荐列表
-        }
+    封面补全（fetch_cover_if_missing）已从此函数移出，
+    改由调用方通过 BackgroundTasks 异步执行，不阻塞响应。
     """
     target_novel = get_novel_by_id(book_id)
-
     if not target_novel:
         raise ValueError(f"小说ID {book_id} 不存在")
 
-    recommendations = get_recommendations(book_id, limit)
+    # 复用已查询的 target_novel，无需在 get_recommendations 内再查一次
+    recommendations = get_recommendations(target_novel, limit)
 
     return {
         "target_novel": {
@@ -142,6 +110,12 @@ def get_recommendation_summary(book_id: int, limit: int = 10) -> Dict:
         },
         "recommendations": recommendations
     }
+
+
+def backfill_missing_covers(recommendations: List[Dict]) -> None:
+    """后台补全推荐列表中缺失的封面，通过 BackgroundTasks 调用，不阻塞响应。"""
+    for rec in recommendations:
+        fetch_cover_if_missing(rec)
 
 
 if __name__ == "__main__":

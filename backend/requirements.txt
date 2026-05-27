@@ -6,7 +6,10 @@ uvicorn[standard]==0.32.1
 pydantic>=2.10.0
 pydantic-settings>=2.6.0
 
-# 爬虫相关（复用现有依赖）
+# 数据库 — 生产环境 PostgreSQL
+psycopg2-binary==2.9.9
+
+# 爬虫相关
 requests==2.32.5
 beautifulsoup4==4.14.3
 lxml==6.0.2

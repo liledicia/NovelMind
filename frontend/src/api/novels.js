@@ -1,15 +1,13 @@
 import axios from 'axios'
 
-// 创建axios实例
+// 生产环境用 VITE_API_BASE_URL（在 Vercel 设置环境变量）
+// 开发环境通过 Vite proxy 转发，baseURL 为 /api 即可
 const apiClient = axios.create({
-  baseURL: '/api',  // 通过Vite代理转发到 http://localhost:8000/api
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json'
-  }
+  headers: { 'Content-Type': 'application/json' }
 })
 
-// 响应拦截器
 apiClient.interceptors.response.use(
   response => response.data,
   error => {
@@ -18,33 +16,11 @@ apiClient.interceptors.response.use(
   }
 )
 
-/**
- * 搜索小说
- * @param {string} query - 小说名称
- * @returns {Promise}
- */
-export const searchNovel = async (query) => {
-  return apiClient.get('/novels/search', {
-    params: { q: query }
-  })
-}
+export const searchNovel = (query) =>
+  apiClient.get('/novels/search', { params: { q: query } })
 
-/**
- * 获取推荐列表
- * @param {number} bookId - 小说ID
- * @param {number} limit - 推荐数量
- * @returns {Promise}
- */
-export const getRecommendations = async (bookId, limit = 10) => {
-  return apiClient.get(`/recommendations/${bookId}`, {
-    params: { limit }
-  })
-}
+export const getRecommendations = (bookId, limit = 10) =>
+  apiClient.get(`/recommendations/${bookId}`, { params: { limit } })
 
-/**
- * 健康检查
- * @returns {Promise}
- */
-export const healthCheck = async () => {
-  return apiClient.get('/health')
-}
+export const healthCheck = () =>
+  apiClient.get('/health')

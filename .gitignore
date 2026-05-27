@@ -2,3 +2,8 @@
 /.claude/
 /.venv/
 /jinjiang_novels.db
+backend/.env
+frontend/.env.local
+frontend/.env.production
+__pycache__/
+*.pyc

@@ -2,11 +2,13 @@
 FastAPI 主程序入口
 NovelMind 晋江小说推荐系统后端
 """
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 
 from .api.routes import novels
+from .database.connection import init_db_indexes
 
 # 配置日志
 logging.basicConfig(
@@ -15,13 +17,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("=" * 60)
+    logger.info("NovelMind API 启动成功!")
+    logger.info("API 文档: http://localhost:8000/docs")
+    init_db_indexes()
+    logger.info("=" * 60)
+    yield
+    logger.info("NovelMind API 已关闭")
+
+
 # 创建FastAPI应用实例
 app = FastAPI(
     title="NovelMind API",
     description="晋江小说推荐系统 - 基于智能算法的小说推荐服务",
     version="1.0.0",
-    docs_url="/docs",  # Swagger UI 文档地址
-    redoc_url="/redoc"  # ReDoc 文档地址
+    docs_url="/docs",
+    redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 # 配置CORS中间件（允许前端跨域访问）
@@ -34,17 +49,16 @@ app.add_middleware(
         "http://127.0.0.1:3000"
     ],
     allow_credentials=True,
-    allow_methods=["*"],  # 允许所有HTTP方法
-    allow_headers=["*"],  # 允许所有请求头
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # 注册路由
 app.include_router(novels.router)
 
-# 根路径
+
 @app.get("/")
 async def root():
-    """API根路径"""
     return {
         "service": "NovelMind API",
         "version": "1.0.0",
@@ -56,23 +70,6 @@ async def root():
             "health": "/api/health"
         }
     }
-
-
-# 启动事件
-@app.on_event("startup")
-async def startup_event():
-    """应用启动时执行"""
-    logger.info("=" * 60)
-    logger.info("NovelMind API 启动成功!")
-    logger.info("API 文档: http://localhost:8000/docs")
-    logger.info("=" * 60)
-
-
-# 关闭事件
-@app.on_event("shutdown")
-async def shutdown_event():
-    """应用关闭时执行"""
-    logger.info("NovelMind API 已关闭")
 
 
 if __name__ == "__main__":
