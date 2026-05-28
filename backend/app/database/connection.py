@@ -27,15 +27,15 @@ def _get_pg_pool():
 # ── 统一上下文管理器 ───────────────────────────────────────────
 @contextmanager
 def get_db_connection() -> Generator:
+    # 内层是纯生成器函数，用 yield from 委托
     if DATABASE_URL:
         yield from _pg_connection()
     else:
         yield from _sqlite_connection()
 
 
-@contextmanager
 def _pg_connection():
-    import psycopg2.extras
+    """纯生成器（勿加 @contextmanager），供 get_db_connection 用 yield from 委托。"""
     pool = _get_pg_pool()
     conn = pool.getconn()
     try:
@@ -48,8 +48,8 @@ def _pg_connection():
         pool.putconn(conn)
 
 
-@contextmanager
 def _sqlite_connection():
+    """纯生成器（勿加 @contextmanager），供 get_db_connection 用 yield from 委托。"""
     import sqlite3
     conn = sqlite3.connect(SQLITE_PATH)
     conn.row_factory = sqlite3.Row

@@ -1,10 +1,52 @@
 """
 推荐算法服务
 """
-from typing import List, Dict, Optional
+import time
+import threading
+from typing import List, Dict, Optional, Tuple
 from ..utils.similarity import calculate_multidimensional_similarity
-from .novel_service import get_novel_by_id, get_all_novels, insert_novel
+from .novel_service import get_novel_by_id, get_candidate_novels, insert_novel
 from .crawler_service import JinjiangCrawler
+
+
+# ── 推荐结果 TTL 缓存 ────────────────────────────────────────────
+# 小说静态数据变化很慢，缓存 5 分钟可大幅减少重复查询 + 重算
+_CACHE_TTL = 300       # 秒
+_CACHE_MAX_SIZE = 1000  # 最大缓存条目数，防止无限增长
+_rec_cache: Dict[Tuple[int, int], Tuple[float, Dict]] = {}
+_cache_lock = threading.Lock()
+
+
+def _cache_get(key: Tuple[int, int]) -> Optional[Dict]:
+    with _cache_lock:
+        entry = _rec_cache.get(key)
+        if entry is None:
+            return None
+        expire_ts, value = entry
+        if expire_ts < time.time():
+            _rec_cache.pop(key, None)
+            return None
+        return value
+
+
+def _cache_set(key: Tuple[int, int], value: Dict) -> None:
+    with _cache_lock:
+        # 超过容量上限：先清掉已过期条目，仍超限则按过期时间淘汰最旧的
+        if len(_rec_cache) >= _CACHE_MAX_SIZE:
+            now = time.time()
+            expired = [k for k, (ts, _) in _rec_cache.items() if ts < now]
+            for k in expired:
+                _rec_cache.pop(k, None)
+            if len(_rec_cache) >= _CACHE_MAX_SIZE:
+                oldest = min(_rec_cache, key=lambda k: _rec_cache[k][0])
+                _rec_cache.pop(oldest, None)
+        _rec_cache[key] = (time.time() + _CACHE_TTL, value)
+
+
+def invalidate_recommendation_cache() -> None:
+    """数据更新后可调用，清空推荐缓存。"""
+    with _cache_lock:
+        _rec_cache.clear()
 
 
 def fetch_cover_if_missing(novel: Dict) -> Dict:
@@ -64,8 +106,9 @@ def get_recommendations(
     Returns:
         List[dict]: 推荐小说列表，每项含 similarity_score 和 match_reasons
     """
-    book_id = target_novel["book_id"]
-    candidate_novels = get_all_novels(exclude_id=book_id)
+    # 候选集预筛选：只取与目标至少共享一个信号的小说，
+    # 而非全表 5000+ 条，DB 传输与 Python 计算量都大幅下降
+    candidate_novels = get_candidate_novels(target_novel)
 
     recommendations = []
     for candidate in candidate_novels:
@@ -92,7 +135,14 @@ def get_recommendation_summary(book_id: int, limit: int = 10) -> Dict:
 
     封面补全（fetch_cover_if_missing）已从此函数移出，
     改由调用方通过 BackgroundTasks 异步执行，不阻塞响应。
+
+    结果带 5 分钟 TTL 缓存，相同 (book_id, limit) 的请求直接命中缓存。
     """
+    cache_key = (book_id, limit)
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     target_novel = get_novel_by_id(book_id)
     if not target_novel:
         raise ValueError(f"小说ID {book_id} 不存在")
@@ -100,7 +150,7 @@ def get_recommendation_summary(book_id: int, limit: int = 10) -> Dict:
     # 复用已查询的 target_novel，无需在 get_recommendations 内再查一次
     recommendations = get_recommendations(target_novel, limit)
 
-    return {
+    result = {
         "target_novel": {
             "book_id": target_novel["book_id"],
             "title": target_novel["title"],
@@ -110,6 +160,9 @@ def get_recommendation_summary(book_id: int, limit: int = 10) -> Dict:
         },
         "recommendations": recommendations
     }
+
+    _cache_set(cache_key, result)
+    return result
 
 
 def backfill_missing_covers(recommendations: List[Dict]) -> None:
@@ -129,14 +182,15 @@ if __name__ == "__main__":
 
         novels = get_all_novels(limit=1)
         if novels:
-            test_book_id = novels[0]['book_id']
-            print(f"目标小说: {novels[0]['title']} (ID: {test_book_id})")
-            print(f"作者: {novels[0].get('author')}")
-            print(f"标签: {novels[0].get('tags')}")
+            target = novels[0]
+            test_book_id = target['book_id']
+            print(f"目标小说: {target['title']} (ID: {test_book_id})")
+            print(f"作者: {target.get('author')}")
+            print(f"标签: {target.get('tags')}")
             print()
 
-            # 获取推荐
-            recommendations = get_recommendations(test_book_id, limit=5)
+            # 获取推荐（get_recommendations 现在接收小说字典）
+            recommendations = get_recommendations(target, limit=5)
 
             print(f"为你推荐 {len(recommendations)} 本相似小说:")
             print()

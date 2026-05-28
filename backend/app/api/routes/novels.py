@@ -13,7 +13,11 @@ from ..schemas.novel import NovelResponse, NovelStats, NovelDetail
 from ..schemas.recommendation import RecommendationResponse
 from ...services.novel_service import search_novel_exact, insert_novel
 from ...services.crawler_service import JinjiangCrawler, NovelNotFoundException, CrawlerException
-from ...services.recommendation_service import get_recommendation_summary, backfill_missing_covers
+from ...services.recommendation_service import (
+    get_recommendation_summary,
+    backfill_missing_covers,
+    invalidate_recommendation_cache,
+)
 
 
 # 配置日志
@@ -85,6 +89,9 @@ async def search_novel(q: str = Query(..., min_length=1, description="搜索关�
 
         if not insert_result:
             logger.warning("小说数据入库失败，但仍返回爬取结果")
+        else:
+            # 新增小说会改变其他书的候选集，清空推荐缓存
+            invalidate_recommendation_cache()
 
         # 分离统计数据
         stats_data = {

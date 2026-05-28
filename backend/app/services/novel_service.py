@@ -62,6 +62,48 @@ def get_all_novels(exclude_id: Optional[int] = None, limit: Optional[int] = None
         return [dict(row) for row in cursor.fetchall()]
 
 
+def get_candidate_novels(target_novel: Dict) -> List[Dict]:
+    """
+    推荐候选集预筛选：只返回与目标小说至少共享一个信号
+    （同类型 / 同视角 / 同作者 / 任一标签重叠）的小说。
+
+    相似度算法中 score>0 的充要条件就是上述信号至少命中一个，
+    因此该预筛选保证零漏召回（no false negatives），同时把候选集
+    从全表 5000+ 条缩减到通常几百条，大幅降低 DB 传输与 Python 计算量。
+
+    注：tags 用 LIKE '%tag%' 做超集匹配（可能含少量误召回），
+    最终 Python 精算会修正分数，不影响结果正确性。
+    """
+    book_id = target_novel["book_id"]
+    conditions: List[str] = []
+    params: list = [book_id]
+
+    for field in ("category", "perspective", "author"):
+        val = target_novel.get(field)
+        if val:
+            conditions.append(f"{field} = {_P}")
+            params.append(val)
+
+    tags = (target_novel.get("tags") or "").split()
+    for tag in tags:
+        tag = tag.strip()
+        if tag:
+            conditions.append(f"tags LIKE {_P}")
+            params.append(f"%{tag}%")
+
+    # 目标小说没有任何可匹配信号 → 无候选
+    if len(conditions) == 0:
+        return []
+
+    where_clause = " OR ".join(conditions)
+    query = f"SELECT * FROM book WHERE book_id != {_P} AND ({where_clause})"
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        return [dict(row) for row in cursor.fetchall()]
+
+
 def insert_novel(novel_data: dict) -> bool:
     try:
         book_id = novel_data.get('book_id')
