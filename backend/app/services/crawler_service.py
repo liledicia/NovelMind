@@ -482,6 +482,86 @@ class JinjiangCrawler:
 
         return data
 
+    def fetch_stats_via_mobile_api(self, book_id) -> Dict:
+        """
+        通过晋江移动端 JSON API 获取干净的统计数据。
+
+        桌面端静态页里「营养液数 / 章均点击数」是 JS 动态加载的，
+        静态 HTML 抓不到（恒为 0）；移动端 API 直接返回结构化数字。
+
+        Args:
+            book_id: 小说 ID
+
+        Returns:
+            dict: 仅包含成功解析到的统计字段，
+                  可能含 favorite_count / review_count / nutrient_count / total_click_count。
+                  失败或缺字段时安全返回（不覆盖已有数据）。
+        """
+        stats: Dict = {}
+        if not book_id:
+            return stats
+
+        url = f"https://app.jjwxc.org/androidapi/novelbasicinfo?novelId={book_id}"
+        try:
+            time.sleep(random.uniform(1.0, 2.0))
+            resp = requests.get(
+                url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) "
+                                  "AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+                },
+                timeout=12,
+            )
+            resp.encoding = "utf-8"
+            d = resp.json()
+        except Exception as e:
+            print(f"⚠ 移动API统计获取失败 (book_id={book_id}): {e}")
+            return stats
+
+        def _to_int(v):
+            """计数字段：可能带千分位逗号或「(章均)」后缀，去掉非数字取整。"""
+            if v is None:
+                return None
+            digits = re.sub(r"[^\d]", "", str(v))
+            return int(digits) if digits else None
+
+        def _parse_cn_number(v):
+            """文章积分是「74.3亿 / 2.7万」这类带单位的近似值，按单位换算成整数。"""
+            if v is None:
+                return None
+            m = re.search(r"([\d.]+)\s*(亿|万)?", str(v))
+            if not m:
+                return None
+            try:
+                num = float(m.group(1))
+            except ValueError:
+                return None
+            unit = m.group(2)
+            if unit == "亿":
+                num *= 1e8
+            elif unit == "万":
+                num *= 1e4
+            return int(round(num))
+
+        # 移动端字段 → 数据库字段映射
+        for src, dst in [
+            ("novelbefavoritedcount", "favorite_count"),
+            ("comment_count", "review_count"),
+            ("nutrition_novel", "nutrient_count"),
+            ("novip_clicks", "total_click_count"),
+        ]:
+            val = _to_int(d.get(src))
+            if val is not None:
+                stats[dst] = val
+
+        # 文章积分：移动端是近似值（带万/亿），仅作为缺失时的兜底，
+        # 桌面端静态页能拿到精确整数，crawl_novel_complete 会优先保留它
+        score = _parse_cn_number(d.get("novelScore"))
+        if score is not None:
+            stats["score"] = score
+
+        return stats
+
     def crawl_novel_complete(self, novel_name: str) -> Dict:
         """
         完整爬取流程：搜索 → 获取详情
@@ -510,6 +590,13 @@ class JinjiangCrawler:
             **search_result,  # book_id, title, url
             **detail  # 所有详情字段
         }
+
+        # Step 4: 用移动端 API 覆盖统计数据（营养液/点击数等桌面端静态页抓不到）
+        # 但桌面端的「文章积分」是精确整数，优于移动端的近似值（74.3亿），故予以保留
+        desktop_score = complete_data.get("score")
+        complete_data.update(self.fetch_stats_via_mobile_api(complete_data.get("book_id")))
+        if desktop_score is not None:
+            complete_data["score"] = desktop_score
 
         return complete_data
 

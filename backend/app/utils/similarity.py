@@ -1,7 +1,7 @@
 """
 相似度计算工具模块
 """
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 
 # 区分度极低的「基调」标签：几乎人人都有，单独命中不构成有意义的相似。
@@ -84,15 +84,24 @@ def _build_match_summary(
     return "，".join(p for p in lead if p) + "。"
 
 
-def calculate_tag_similarity(tags1: Optional[str], tags2: Optional[str]) -> float:
+def calculate_tag_similarity(
+    tags1: Optional[str],
+    tags2: Optional[str],
+    idf: Optional[Dict[str, float]] = None,
+    default_idf: float = 1.0,
+) -> float:
     """
-    计算两个标签字符串的Jaccard相似度
+    计算两个标签字符串的 Jaccard 相似度。
 
-    Jaccard相似系数 = |交集| / |并集|
+    - 不传 idf：普通 Jaccard = |交集| / |并集|（所有标签等权）
+    - 传 idf：加权 Jaccard = Σidf(交集) / Σidf(并集)，
+      高频标签(正剧/甜文)权重低，稀有强信号标签(破镜重圆)权重高。
 
     Args:
         tags1: 第一个标签字符串，如 "强强 江湖 正剧"
         tags2: 第二个标签字符串，如 "强强 现代 正剧"
+        idf: 可选的 {标签: IDF} 权重表
+        default_idf: idf 表里没有的标签的兜底权重
 
     Returns:
         float: 相似度分数，范围[0, 1]
@@ -112,12 +121,17 @@ def calculate_tag_similarity(tags1: Optional[str], tags2: Optional[str]) -> floa
     if not set1 or not set2:
         return 0.0
 
-    # 计算交集和并集
-    intersection = len(set1 & set2)  # 交集
-    union = len(set1 | set2)  # 并集
+    intersection = set1 & set2
+    union = set1 | set2
 
-    # 返回Jaccard系数
-    return intersection / union if union > 0 else 0.0
+    if idf is None:
+        # 普通 Jaccard（保持向后兼容）
+        return len(intersection) / len(union) if union else 0.0
+
+    # IDF 加权 Jaccard
+    inter_w = sum(idf.get(t, default_idf) for t in intersection)
+    union_w = sum(idf.get(t, default_idf) for t in union)
+    return inter_w / union_w if union_w > 0 else 0.0
 
 
 def parse_tags(tags_str: Optional[str]) -> List[str]:
@@ -138,8 +152,10 @@ def parse_tags(tags_str: Optional[str]) -> List[str]:
 def calculate_multidimensional_similarity(
     novel1: dict,
     novel2: dict,
-    weights: Optional[dict] = None
-) -> tuple[float, List[str]]:
+    weights: Optional[dict] = None,
+    tag_idf: Optional[Dict[str, float]] = None,
+    default_idf: float = 1.0,
+) -> tuple[float, List[str], str]:
     """
     计算两本小说的多维度相似度
 
@@ -182,7 +198,7 @@ def calculate_multidimensional_similarity(
     # 1. 标签相似度
     tags1 = novel1.get("tags") or ""
     tags2 = novel2.get("tags") or ""
-    tag_sim = calculate_tag_similarity(tags1, tags2)
+    tag_sim = calculate_tag_similarity(tags1, tags2, tag_idf, default_idf)
 
     common_specific: List[str] = []  # 有区分度的题材标签
     common_mood: List[str] = []      # 低区分度的基调标签（正剧/轻松等）

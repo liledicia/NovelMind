@@ -5,6 +5,7 @@ import time
 import threading
 from typing import List, Dict, Optional, Tuple
 from ..utils.similarity import calculate_multidimensional_similarity
+from ..utils.tag_idf import get_tag_idf, get_default_idf, clear_tag_idf_cache
 from .novel_service import get_novel_by_id, get_candidate_novels, insert_novel
 from .crawler_service import JinjiangCrawler
 
@@ -44,9 +45,10 @@ def _cache_set(key: Tuple[int, int], value: Dict) -> None:
 
 
 def invalidate_recommendation_cache() -> None:
-    """数据更新后可调用，清空推荐缓存。"""
+    """数据更新后可调用，清空推荐缓存 + 标签 IDF 缓存（新书会改变标签频率）。"""
     with _cache_lock:
         _rec_cache.clear()
+    clear_tag_idf_cache()
 
 
 def fetch_cover_if_missing(novel: Dict) -> Dict:
@@ -90,6 +92,48 @@ def fetch_cover_if_missing(novel: Dict) -> Dict:
     return novel
 
 
+def fetch_stats_if_missing(novel: Dict) -> Dict:
+    """
+    检查小说统计数据，缺失则通过移动端 API 实时补全并写回数据库。
+
+    判定标准：nutrient_count 为 None（营养液数桌面端静态页抓不到，
+    历史入库的书几乎都缺），触发一次移动端 API 补全。
+
+    Args:
+        novel: 小说数据字典
+
+    Returns:
+        Dict: 更新后的小说数据（如果补全了统计）
+    """
+    # 已有营养液数据，视为统计完整，直接返回
+    if novel.get('nutrient_count') is not None:
+        return novel
+
+    # 没有 book_id 无法补全
+    if not novel.get('book_id'):
+        return novel
+
+    try:
+        crawler = JinjiangCrawler()
+        stats = crawler.fetch_stats_via_mobile_api(novel['book_id'])
+
+        if stats:
+            novel.update(stats)
+            # 写回数据库，下次直接命中
+            insert_novel(novel)
+            print(f"✓ 已为《{novel.get('title')}》补全统计数据")
+    except Exception as e:
+        print(f"✗ 补全《{novel.get('title')}》统计失败: {e}")
+
+    return novel
+
+
+def backfill_missing_stats(recommendations: List[Dict]) -> None:
+    """后台补全推荐列表中缺失的统计数据，通过 BackgroundTasks 调用，不阻塞响应。"""
+    for rec in recommendations:
+        fetch_stats_if_missing(rec)
+
+
 def get_recommendations(
     target_novel: Dict,
     limit: int = 10,
@@ -110,12 +154,18 @@ def get_recommendations(
     # 而非全表 5000+ 条，DB 传输与 Python 计算量都大幅下降
     candidate_novels = get_candidate_novels(target_novel)
 
+    # 标签 IDF 权重表只加载一次，供本次所有候选共用
+    tag_idf = get_tag_idf()
+    default_idf = get_default_idf()
+
     recommendations = []
     for candidate in candidate_novels:
         similarity_score, match_reasons, match_summary = calculate_multidimensional_similarity(
             target_novel,
             candidate,
-            weights
+            weights,
+            tag_idf=tag_idf,
+            default_idf=default_idf,
         )
         if similarity_score > 0:
             recommendations.append({
