@@ -759,7 +759,7 @@ const openPreview = (item) => {
   flex-shrink: 0;
 }
 
-/* 试读按钮（推荐卡片内）—— 默认渐变高亮，悬停切换为白底深字 */
+/* 试读按钮（推荐卡片内）—— 渐变高亮，悬停白色波纹扩散并淡出 */
 .preview-link {
   margin-left: auto;
   display: inline-flex;
@@ -776,6 +776,33 @@ const openPreview = (item) => {
   transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
   box-shadow: 0 4px 12px rgba(139, 163, 181, 0.25);
   font-family: 'DM Sans', sans-serif;
+  position: relative;
+  overflow: hidden;
+}
+
+/* 扩散波纹（与「前往晋江原文」一致） */
+.preview-link::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transform: translate(-50%, -50%);
+  transition: width 0.6s ease, height 0.6s ease;
+}
+
+.preview-link:hover::before {
+  width: 240px;
+  height: 240px;
+}
+
+.preview-link svg,
+.preview-link span {
+  position: relative;
+  z-index: 1;
 }
 
 .preview-link svg {
@@ -785,11 +812,8 @@ const openPreview = (item) => {
 }
 
 .preview-link:hover {
-  background: #ffffff;
-  border-color: var(--color-accent-pink);
-  color: #A05A55;
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(139, 163, 181, 0.15);
+  box-shadow: 0 8px 20px rgba(139, 163, 181, 0.4);
 }
 
 /* 悬停指示器 */

@@ -150,7 +150,7 @@
 
         <!-- 操作按钮 -->
         <div class="actions-section">
-          <button @click="openPreview" class="action-button secondary">
+          <button @click="openPreview" class="action-button primary">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="button-icon">
               <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
               <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
@@ -861,20 +861,6 @@ const openOriginal = () => {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 220px;
-}
-
-/* 次要操作按钮 */
-.action-button.secondary {
-  background: #ffffff;
-  color: var(--color-dark-blue);
-  border: 1.5px solid var(--color-primary);
-  box-shadow: 0 2px 10px rgba(139, 163, 181, 0.12);
-}
-
-.action-button.secondary:hover {
-  background: rgba(139, 163, 181, 0.08);
-  box-shadow: 0 6px 18px rgba(139, 163, 181, 0.2);
-  transform: translateY(-3px);
 }
 
 /* 响应式设计 */
