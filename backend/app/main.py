@@ -9,6 +9,7 @@ import logging
 
 from .api.routes import novels
 from .database.connection import init_db_indexes
+from .config import CORS_ORIGINS
 
 # 配置日志
 logging.basicConfig(
@@ -42,12 +43,7 @@ app = FastAPI(
 # 配置CORS中间件（允许前端跨域访问）
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",  # Vite 默认端口
-        "http://localhost:3000",  # 备用前端端口
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:3000"
-    ],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
