@@ -22,5 +22,9 @@ export const searchNovel = (query) =>
 export const getRecommendations = (bookId, limit = 10) =>
   apiClient.get(`/recommendations/${bookId}`, { params: { limit } })
 
+// 试读前 N 章免费正文（懒加载：后端库里有就秒回，没有则实时爬取约 4~8s）
+export const getChapters = (bookId, n = 3) =>
+  apiClient.get(`/novels/${bookId}/chapters`, { params: { n } })
+
 export const healthCheck = () =>
   apiClient.get('/health')

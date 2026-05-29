@@ -126,6 +126,13 @@
               </svg>
               <span>{{ formatNumber(item.review_count || 0) }}</span>
             </div>
+            <button class="preview-link" @click.stop="openPreview(item)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+              </svg>
+              <span>试读前三章</span>
+            </button>
           </div>
         </div>
 
@@ -139,12 +146,16 @@
         </div>
       </div>
     </div>
+
+    <!-- 试读抽屉：所有推荐书共用一个，点谁抓谁 -->
+    <ChapterPreviewDrawer v-model="previewVisible" :book="previewBook" />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, defineProps } from 'vue'
 import { formatWordCount, formatNumber, getProxiedImageUrl, getJJWXCFallbackCover } from '@/utils/formatter'
+import ChapterPreviewDrawer from '@/components/ChapterPreviewDrawer.vue'
 
 const props = defineProps({
   recommendations: {
@@ -228,6 +239,15 @@ const handleImageError = (event, item) => {
 const viewDetail = (novel) => {
   const url = novel.url || `https://www.jjwxc.net/onebook.php?novelid=${novel.book_id}`
   window.open(url, '_blank')
+}
+
+// ── 试读抽屉（所有推荐书共用，点哪本抓哪本） ──────────────
+const previewVisible = ref(false)
+const previewBook = ref(null)
+
+const openPreview = (item) => {
+  previewBook.value = item
+  previewVisible.value = true
 }
 </script>
 
@@ -737,6 +757,39 @@ const viewDetail = (novel) => {
   height: 13px;
   color: var(--color-secondary);
   flex-shrink: 0;
+}
+
+/* 试读按钮（推荐卡片内）—— 默认渐变高亮，悬停切换为白底深字 */
+.preview-link {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-accent-pink));
+  border: 1.5px solid transparent;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 700;
+  color: white;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 4px 12px rgba(139, 163, 181, 0.25);
+  font-family: 'DM Sans', sans-serif;
+}
+
+.preview-link svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
+.preview-link:hover {
+  background: #ffffff;
+  border-color: var(--color-accent-pink);
+  color: #A05A55;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(139, 163, 181, 0.15);
 }
 
 /* 悬停指示器 */

@@ -53,6 +53,7 @@
             </svg>
             <span class="author-name">{{ novel.author || '未知作者' }}</span>
           </div>
+          <p v-if="novel.intro_short" class="novel-tagline">{{ novel.intro_short }}</p>
         </div>
 
         <!-- 核心信息网格 -->
@@ -97,6 +98,25 @@
           </div>
         </div>
 
+        <!-- 角色 -->
+        <div v-if="characterList.length" class="characters-section">
+          <div class="tags-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="tag-icon">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+            <span>角色</span>
+          </div>
+          <div class="characters-list">
+            <div v-for="(c, idx) in characterList" :key="idx" class="character-chip">
+              <span class="character-name">{{ c.name }}</span>
+              <span v-if="c.intro" class="character-intro">{{ c.intro }}</span>
+            </div>
+          </div>
+        </div>
+
         <!-- 统计数据 -->
         <div v-if="stats" class="stats-row">
           <div class="stat-item">
@@ -130,6 +150,13 @@
 
         <!-- 操作按钮 -->
         <div class="actions-section">
+          <button @click="openPreview" class="action-button secondary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="button-icon">
+              <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+              <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+            </svg>
+            试读前三章
+          </button>
           <button @click="openOriginal" class="action-button primary">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="button-icon">
               <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
@@ -141,12 +168,16 @@
         </div>
       </div>
     </div>
+
+    <!-- 试读抽屉（共用组件） -->
+    <ChapterPreviewDrawer v-model="previewVisible" :book="novel" />
   </div>
 </template>
 
 <script setup>
 import { computed, defineProps, ref } from 'vue'
 import { formatWordCount, parseTags, formatNumber, getProxiedImageUrl, getJJWXCFallbackCover } from '@/utils/formatter'
+import ChapterPreviewDrawer from '@/components/ChapterPreviewDrawer.vue'
 
 const props = defineProps({
   novel: {
@@ -168,6 +199,30 @@ const imageError = ref(false)
 const sourceText = computed(() => {
   return props.source === 'database' ? '数据库' : '实时爬取'
 })
+
+// 角色列表：novel.characters 是后端存的 JSON 字符串（也兼容已是数组的情况）
+const characterList = computed(() => {
+  const raw = props.novel.characters
+  if (!raw) return []
+  let arr = raw
+  if (typeof raw === 'string') {
+    try {
+      arr = JSON.parse(raw)
+    } catch (e) {
+      return []
+    }
+  }
+  if (!Array.isArray(arr)) return []
+  return arr
+    .filter(c => c && c.name)
+    .map(c => ({ name: c.name, intro: c.intro || '' }))
+})
+
+// ── 试读抽屉（抓取逻辑在共用组件内） ──────────────────────
+const previewVisible = ref(false)
+const openPreview = () => {
+  previewVisible.value = true
+}
 
 // 使用代理处理封面图片URL
 const coverImageUrl = computed(() => {
@@ -756,6 +811,70 @@ const openOriginal = () => {
   height: 16px;
   position: relative;
   z-index: 1;
+}
+
+/* 一句话简介 */
+.novel-tagline {
+  margin: 12px 0 0 0;
+  font-size: 14px;
+  font-style: italic;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  letter-spacing: 0.3px;
+}
+
+/* 角色区域 */
+.characters-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.characters-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.character-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 14px;
+  background: linear-gradient(135deg, rgba(212, 181, 176, 0.1), rgba(229, 201, 196, 0.08));
+  border: 1px solid rgba(212, 181, 176, 0.3);
+  border-radius: 12px;
+  max-width: 100%;
+}
+
+.character-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.character-intro {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+/* 次要操作按钮 */
+.action-button.secondary {
+  background: #ffffff;
+  color: var(--color-dark-blue);
+  border: 1.5px solid var(--color-primary);
+  box-shadow: 0 2px 10px rgba(139, 163, 181, 0.12);
+}
+
+.action-button.secondary:hover {
+  background: rgba(139, 163, 181, 0.08);
+  box-shadow: 0 6px 18px rgba(139, 163, 181, 0.2);
+  transform: translateY(-3px);
 }
 
 /* 响应式设计 */
