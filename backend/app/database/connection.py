@@ -106,7 +106,10 @@ CREATE TABLE IF NOT EXISTS book (
     nutrient_count      INTEGER,
     total_click_count   INTEGER,
     score               BIGINT,
-    cover_url           TEXT
+    cover_url           TEXT,
+    intro_short         TEXT,
+    characters          TEXT,
+    character_relations TEXT
 );
 """
 
@@ -135,9 +138,46 @@ CREATE TABLE IF NOT EXISTS book (
     nutrient_count      INTEGER,
     total_click_count   INTEGER,
     score               INTEGER,
-    cover_url           TEXT
+    cover_url           TEXT,
+    intro_short         TEXT,
+    characters          TEXT,
+    character_relations TEXT
 );
 """
+
+# 章节试读表：存前 N 章免费正文，(book_id, chapter_id) 唯一
+_CREATE_CHAPTER_PG = """
+CREATE TABLE IF NOT EXISTS chapter (
+    book_id         BIGINT NOT NULL,
+    chapter_id      INTEGER NOT NULL,
+    chapter_order   INTEGER,
+    chapter_name    TEXT,
+    chapter_intro   TEXT,
+    content         TEXT,
+    author_say      TEXT,
+    PRIMARY KEY (book_id, chapter_id)
+);
+"""
+
+_CREATE_CHAPTER_SQLITE = """
+CREATE TABLE IF NOT EXISTS chapter (
+    book_id         INTEGER NOT NULL,
+    chapter_id      INTEGER NOT NULL,
+    chapter_order   INTEGER,
+    chapter_name    TEXT,
+    chapter_intro   TEXT,
+    content         TEXT,
+    author_say      TEXT,
+    PRIMARY KEY (book_id, chapter_id)
+);
+"""
+
+# 对已存在的旧库做增量迁移（新加的列）。SQLite 无 IF NOT EXISTS，靠 try/except 容错。
+_MIGRATION_COLUMNS = [
+    ("book", "intro_short", "TEXT"),
+    ("book", "characters", "TEXT"),
+    ("book", "character_relations", "TEXT"),
+]
 
 _INDEXES = [
     ("idx_book_title",  "CREATE INDEX IF NOT EXISTS idx_book_title  ON book(title)"),
@@ -147,13 +187,26 @@ _INDEXES = [
 
 
 def init_db_indexes():
-    """启动时建表（如不存在）并创建索引。"""
+    """启动时建表（如不存在）、增量迁移旧库新列、创建索引。"""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         try:
-            ddl = _CREATE_TABLE_PG if DATABASE_URL else _CREATE_TABLE_SQLITE
-            cursor.execute(ddl)
+            cursor.execute(_CREATE_TABLE_PG if DATABASE_URL else _CREATE_TABLE_SQLITE)
+            cursor.execute(_CREATE_CHAPTER_PG if DATABASE_URL else _CREATE_CHAPTER_SQLITE)
             for _, sql in _INDEXES:
                 cursor.execute(sql)
         except Exception as e:
             print(f"数据库初始化失败: {e}")
+
+        # 旧库增量迁移：逐列尝试添加，已存在则忽略
+        for table, col, coltype in _MIGRATION_COLUMNS:
+            try:
+                if DATABASE_URL:
+                    cursor.execute(
+                        f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {coltype}"
+                    )
+                else:
+                    cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col} {coltype}")
+            except Exception:
+                # SQLite 列已存在会抛 "duplicate column name"，属预期，忽略
+                pass

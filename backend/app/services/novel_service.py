@@ -134,6 +134,9 @@ def insert_novel(novel_data: dict) -> bool:
             novel_data.get('total_click_count'),
             novel_data.get('score'),
             cover_url,
+            novel_data.get('intro_short'),
+            novel_data.get('characters'),
+            novel_data.get('character_relations'),
         )
 
         with get_db_connection() as conn:
@@ -146,9 +149,10 @@ def insert_novel(novel_data: dict) -> bool:
                         other_info, category, perspective, series, status, word_count,
                         publish_status, sign_status, first_pub_time, last_update_time,
                         chapter_count, review_count, favorite_count, nutrient_count,
-                        total_click_count, score, cover_url
+                        total_click_count, score, cover_url,
+                        intro_short, characters, character_relations
                     ) VALUES (
-                        %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
+                        %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
                     )
                     ON CONFLICT (book_id) DO UPDATE SET
                         title = EXCLUDED.title,
@@ -173,7 +177,10 @@ def insert_novel(novel_data: dict) -> bool:
                         nutrient_count = EXCLUDED.nutrient_count,
                         total_click_count = EXCLUDED.total_click_count,
                         score = EXCLUDED.score,
-                        cover_url = EXCLUDED.cover_url
+                        cover_url = EXCLUDED.cover_url,
+                        intro_short = EXCLUDED.intro_short,
+                        characters = EXCLUDED.characters,
+                        character_relations = EXCLUDED.character_relations
                 """, values)
             else:
                 # SQLite upsert
@@ -183,8 +190,9 @@ def insert_novel(novel_data: dict) -> bool:
                         other_info, category, perspective, series, status, word_count,
                         publish_status, sign_status, first_pub_time, last_update_time,
                         chapter_count, review_count, favorite_count, nutrient_count,
-                        total_click_count, score, cover_url
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        total_click_count, score, cover_url,
+                        intro_short, characters, character_relations
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """, values)
         return True
 

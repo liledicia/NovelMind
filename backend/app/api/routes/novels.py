@@ -20,6 +20,7 @@ from ...services.recommendation_service import (
     fetch_stats_if_missing,
     invalidate_recommendation_cache,
 )
+from ...services.chapter_service import get_or_fetch_chapters
 
 
 # 配置日志
@@ -159,6 +160,26 @@ async def get_recommendations(
     except Exception as e:
         logger.error(f"推荐计算错误: {str(e)}")
         raise HTTPException(status_code=500, detail=f"推荐计算失败: {str(e)}")
+
+
+@router.get("/novels/{book_id}/chapters", response_model=dict)
+async def get_chapters(book_id: int, n: int = Query(default=3, ge=1, le=10, description="试读章节数")):
+    """
+    获取小说前 N 章免费试读正文。
+
+    懒加载：库里有就直接返回；没有则实时爬取（约 4~8s，仅首次），
+    爬取放到线程池避免阻塞事件循环。
+    """
+    logger.info(f"获取试读章节: book_id={book_id}, n={n}")
+    try:
+        chapters = await asyncio.to_thread(get_or_fetch_chapters, book_id, n)
+        return {
+            "success": True,
+            "data": {"book_id": book_id, "chapters": chapters},
+        }
+    except Exception as e:
+        logger.error(f"试读章节获取失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"试读章节获取失败: {str(e)}")
 
 
 @router.get("/health")

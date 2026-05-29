@@ -112,19 +112,20 @@ def _quality_factor(novel: Dict) -> float:
 
 def fetch_stats_if_missing(novel: Dict) -> Dict:
     """
-    检查小说统计数据，缺失则通过移动端 API 实时补全并写回数据库。
+    检查小说「统计数据 + 富字段」，缺失则通过移动端 API 实时补全并写回数据库。
 
-    判定标准：nutrient_count 为 None（营养液数桌面端静态页抓不到，
-    历史入库的书几乎都缺），触发一次移动端 API 补全。
+    判定标准：nutrient_count 或 intro_short 为空就触发补全
+    （营养液数桌面端抓不到、一句话简介是新增字段，历史入库的书都缺）。
+    一次 basicinfo 调用同时拿统计 + 简介/角色/关系。
 
     Args:
         novel: 小说数据字典
 
     Returns:
-        Dict: 更新后的小说数据（如果补全了统计）
+        Dict: 更新后的小说数据（如果补全了）
     """
-    # 已有营养液数据，视为统计完整，直接返回
-    if novel.get('nutrient_count') is not None:
+    # 统计和富字段都已就位，直接返回
+    if novel.get('nutrient_count') is not None and novel.get('intro_short') is not None:
         return novel
 
     # 没有 book_id 无法补全
@@ -133,21 +134,21 @@ def fetch_stats_if_missing(novel: Dict) -> Dict:
 
     try:
         crawler = JinjiangCrawler()
-        stats = crawler.fetch_stats_via_mobile_api(novel['book_id'])
+        extras = crawler.fetch_mobile_extras(novel['book_id'])
 
-        if stats:
-            novel.update(stats)
+        if extras:
+            novel.update(extras)
             # 写回数据库，下次直接命中
             insert_novel(novel)
-            print(f"✓ 已为《{novel.get('title')}》补全统计数据")
+            print(f"✓ 已为《{novel.get('title')}》补全统计+富字段")
     except Exception as e:
-        print(f"✗ 补全《{novel.get('title')}》统计失败: {e}")
+        print(f"✗ 补全《{novel.get('title')}》失败: {e}")
 
     return novel
 
 
 def backfill_missing_stats(recommendations: List[Dict]) -> None:
-    """后台补全推荐列表中缺失的统计数据，通过 BackgroundTasks 调用，不阻塞响应。"""
+    """后台补全推荐列表中缺失的统计+富字段，通过 BackgroundTasks 调用，不阻塞响应。"""
     for rec in recommendations:
         fetch_stats_if_missing(rec)
 

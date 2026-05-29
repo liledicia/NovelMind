@@ -30,14 +30,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.services.crawler_service import JinjiangCrawler  # noqa: E402
 from app.services.novel_service import get_novel_by_id, insert_novel  # noqa: E402
-from app.database.connection import get_db_connection  # noqa: E402
+from app.database.connection import get_db_connection, init_db_indexes  # noqa: E402
 
 
 def _fetch_pending_ids(limit=None):
-    """取出所有仍缺统计（nutrient_count 为空）的 book_id。"""
+    """取出所有仍缺统计或富字段（nutrient_count / intro_short 为空）的 book_id。"""
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        sql = "SELECT book_id FROM book WHERE nutrient_count IS NULL ORDER BY book_id"
+        sql = ("SELECT book_id FROM book "
+               "WHERE nutrient_count IS NULL OR intro_short IS NULL "
+               "ORDER BY book_id")
         if limit:
             sql += f" LIMIT {int(limit)}"
         cursor.execute(sql)
@@ -53,6 +55,9 @@ def main():
 
     db = "PostgreSQL（线上）" if os.environ.get("DATABASE_URL") else "SQLite（本地）"
     print(f"数据库: {db}")
+
+    # 确保新列/章节表已迁移（幂等）
+    init_db_indexes()
 
     pending = _fetch_pending_ids(args.limit)
     total = len(pending)
@@ -71,7 +76,7 @@ def main():
             skip += 1
             continue
         try:
-            stats = crawler.fetch_stats_via_mobile_api(book_id)  # 内含 1~2s 限速
+            stats = crawler.fetch_mobile_extras(book_id)  # 统计+富字段，内含 1~2s 限速
             if stats:
                 novel.update(stats)
                 insert_novel(novel)

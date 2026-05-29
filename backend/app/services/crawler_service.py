@@ -4,6 +4,8 @@
 """
 import requests
 import re
+import json
+import html
 import time
 import random
 from bs4 import BeautifulSoup
@@ -482,41 +484,41 @@ class JinjiangCrawler:
 
         return data
 
-    def fetch_stats_via_mobile_api(self, book_id) -> Dict:
+    def _fetch_basicinfo(self, book_id) -> Dict:
         """
-        通过晋江移动端 JSON API 获取干净的统计数据。
+        调晋江移动端 novelbasicinfo 接口，返回原始 JSON dict（含限速）。
 
-        桌面端静态页里「营养液数 / 章均点击数」是 JS 动态加载的，
-        静态 HTML 抓不到（恒为 0）；移动端 API 直接返回结构化数字。
+        桌面端静态页里「营养液数 / 章均点击数」是 JS 动态加载的，静态 HTML 抓不到；
+        移动端这个接口一次性返回结构化的统计数据 + 简介 / 角色 / 关系等富字段。
 
-        Args:
-            book_id: 小说 ID
-
-        Returns:
-            dict: 仅包含成功解析到的统计字段，
-                  可能含 favorite_count / review_count / nutrient_count / total_click_count。
-                  失败或缺字段时安全返回（不覆盖已有数据）。
+        失败时安全返回 {}。
         """
-        stats: Dict = {}
         if not book_id:
-            return stats
-
+            return {}
         url = f"https://app.jjwxc.org/androidapi/novelbasicinfo?novelId={book_id}"
         try:
             time.sleep(random.uniform(1.0, 2.0))
-            resp = requests.get(
-                url,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) "
-                                  "AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
-                },
-                timeout=12,
-            )
+            resp = requests.get(url, headers=self._mobile_headers(), timeout=12)
             resp.encoding = "utf-8"
-            d = resp.json()
+            return resp.json()
         except Exception as e:
-            print(f"⚠ 移动API统计获取失败 (book_id={book_id}): {e}")
-            return stats
+            print(f"⚠ 移动API获取失败 (book_id={book_id}): {e}")
+            return {}
+
+    def fetch_mobile_extras(self, book_id) -> Dict:
+        """
+        一次 basicinfo 调用，提取「统计数据 + 富字段」。
+
+        统计：favorite_count / review_count / nutrient_count / total_click_count / score
+        富字段：intro_short（一句话简介）/ characters（角色表 JSON）/ character_relations（关系 JSON）
+
+        Returns:
+            dict: 仅含成功解析到的字段，失败或缺字段时安全返回（不覆盖已有数据）。
+        """
+        extras: Dict = {}
+        d = self._fetch_basicinfo(book_id)
+        if not d:
+            return extras
 
         def _to_int(v):
             """计数字段：可能带千分位逗号或「(章均)」后缀，去掉非数字取整。"""
@@ -543,7 +545,7 @@ class JinjiangCrawler:
                 num *= 1e4
             return int(round(num))
 
-        # 移动端字段 → 数据库字段映射
+        # ── 统计数据 ──────────────────────────────────────────────
         for src, dst in [
             ("novelbefavoritedcount", "favorite_count"),
             ("comment_count", "review_count"),
@@ -552,15 +554,43 @@ class JinjiangCrawler:
         ]:
             val = _to_int(d.get(src))
             if val is not None:
-                stats[dst] = val
+                extras[dst] = val
 
         # 文章积分：移动端是近似值（带万/亿），仅作为缺失时的兜底，
         # 桌面端静态页能拿到精确整数，crawl_novel_complete 会优先保留它
         score = _parse_cn_number(d.get("novelScore"))
         if score is not None:
-            stats["score"] = score
+            extras["score"] = score
 
-        return stats
+        # ── 富字段 ────────────────────────────────────────────────
+        # 一句话简介：清掉 HTML 实体和首尾引号，空串则不存
+        intro_short = html.unescape(str(d.get("novelIntroShort") or "")).strip().strip("'\"").strip()
+        if intro_short:
+            extras["intro_short"] = intro_short
+
+        # 角色表：仅留 名字 + 简介，序列化为 JSON 字符串
+        chars = d.get("characters")
+        if isinstance(chars, list) and chars:
+            simplified = []
+            for c in chars:
+                name = c.get("character_name")
+                if not name:
+                    continue
+                entry = {"id": c.get("character_id"), "name": name}
+                # character_masked 常为 "0"/空（无简介），仅在有实际内容时保留
+                intro = html.unescape(str(c.get("character_masked") or "")).strip()
+                if intro and intro != "0":
+                    entry["intro"] = intro
+                simplified.append(entry)
+            if simplified:
+                extras["characters"] = json.dumps(simplified, ensure_ascii=False)
+
+        # 角色关系图：原样序列化（引用上面的 character_id）
+        rels = d.get("character_relations")
+        if isinstance(rels, list) and rels:
+            extras["character_relations"] = json.dumps(rels, ensure_ascii=False)
+
+        return extras
 
     def crawl_novel_complete(self, novel_name: str) -> Dict:
         """
@@ -592,13 +622,108 @@ class JinjiangCrawler:
         }
 
         # Step 4: 用移动端 API 覆盖统计数据（营养液/点击数等桌面端静态页抓不到）
+        # 并补充富字段（一句话简介/角色/关系）。
         # 但桌面端的「文章积分」是精确整数，优于移动端的近似值（74.3亿），故予以保留
         desktop_score = complete_data.get("score")
-        complete_data.update(self.fetch_stats_via_mobile_api(complete_data.get("book_id")))
+        complete_data.update(self.fetch_mobile_extras(complete_data.get("book_id")))
         if desktop_score is not None:
             complete_data["score"] = desktop_score
 
         return complete_data
+
+    # ── 章节试读（前 N 章免费正文）─────────────────────────────────
+    def fetch_chapter_list(self, book_id) -> list:
+        """
+        取小说章节列表（移动端 chapterList 接口）。
+
+        返回的列表已过滤掉「卷标题」分隔项（chaptertype=1、size=0），
+        只保留有正文的真实章节，按原顺序。每项含 chapterid / chaptername /
+        isvip / chaptersize。失败返回 []。
+        """
+        if not book_id:
+            return []
+        url = f"https://app.jjwxc.org/androidapi/chapterList?novelId={book_id}"
+        try:
+            time.sleep(random.uniform(1.0, 2.0))
+            resp = requests.get(url, headers=self._mobile_headers(), timeout=12)
+            resp.encoding = "utf-8"
+            raw = resp.json().get("chapterlist", [])
+        except Exception as e:
+            print(f"⚠ 章节列表获取失败 (book_id={book_id}): {e}")
+            return []
+
+        chapters = []
+        for c in raw:
+            # 卷标题分隔项：chaptertype=1 且无正文（size=0），跳过
+            if str(c.get("chaptertype")) == "1" or str(c.get("chaptersize")) in ("0", ""):
+                continue
+            chapters.append({
+                "chapter_id": int(c["chapterid"]),
+                "chapter_name": (c.get("chaptername") or "").strip(),
+                "is_vip": str(c.get("isvip")) == "1",
+                "chapter_size": int(re.sub(r"[^\d]", "", str(c.get("chaptersize") or "0")) or 0),
+            })
+        return chapters
+
+    def fetch_chapter_content(self, book_id, chapter_id) -> Dict:
+        """
+        取单章正文（移动端 chapterContent 接口）。
+
+        免费章节（isvip=0）返回明文正文；VIP 章节正文会被锁，content 为空/提示。
+        返回 dict：chapter_name / chapter_intro（章节钩子）/ content（正文）/
+        author_say（作者的话）/ is_vip。失败返回 {}。
+        """
+        if not book_id or not chapter_id:
+            return {}
+        url = f"https://app.jjwxc.org/androidapi/chapterContent?novelId={book_id}&chapterId={chapter_id}"
+        try:
+            time.sleep(random.uniform(1.0, 2.0))
+            resp = requests.get(url, headers=self._mobile_headers(), timeout=12)
+            resp.encoding = "utf-8"
+            d = resp.json()
+        except Exception as e:
+            print(f"⚠ 章节正文获取失败 (book_id={book_id}, ch={chapter_id}): {e}")
+            return {}
+
+        return {
+            "chapter_name": (d.get("chapterName") or "").strip(),
+            "chapter_intro": html.unescape(str(d.get("chapterIntro") or "")).strip(),
+            "content": html.unescape(str(d.get("content") or "")).strip(),
+            "author_say": html.unescape(str(d.get("sayBody") or "")).strip(),
+            "is_vip": str(d.get("isvip")) == "1",
+        }
+
+    def fetch_free_chapters(self, book_id, n: int = 3) -> list:
+        """
+        爬前 N 章「免费正文」用于试读。
+
+        先取章节列表，挑出前 n 个非 VIP 的真实章节，逐章取正文。
+        每项 dict：chapter_id / chapter_order / chapter_name / chapter_intro /
+        content / author_say。失败/无免费章节返回 []。
+        """
+        chapters = self.fetch_chapter_list(book_id)
+        free = [c for c in chapters if not c["is_vip"]][:n]
+        result = []
+        for order, c in enumerate(free, 1):
+            detail = self.fetch_chapter_content(book_id, c["chapter_id"])
+            if not detail or not detail.get("content"):
+                continue
+            result.append({
+                "chapter_id": c["chapter_id"],
+                "chapter_order": order,
+                "chapter_name": detail["chapter_name"] or c["chapter_name"],
+                "chapter_intro": detail["chapter_intro"],
+                "content": detail["content"],
+                "author_say": detail["author_say"],
+            })
+        return result
+
+    def _mobile_headers(self) -> dict:
+        """移动端接口统一 UA。"""
+        return {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) "
+                          "AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+        }
 
 
 if __name__ == "__main__":
