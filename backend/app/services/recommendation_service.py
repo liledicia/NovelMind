@@ -112,7 +112,7 @@ def get_recommendations(
 
     recommendations = []
     for candidate in candidate_novels:
-        similarity_score, match_reasons = calculate_multidimensional_similarity(
+        similarity_score, match_reasons, match_summary = calculate_multidimensional_similarity(
             target_novel,
             candidate,
             weights
@@ -122,6 +122,7 @@ def get_recommendations(
                 **candidate,
                 "similarity_score": round(similarity_score, 2),
                 "match_reasons": match_reasons,
+                "match_summary": match_summary,
                 "url": f"https://www.jjwxc.net/onebook.php?novelid={candidate['book_id']}"
             })
 

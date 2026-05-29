@@ -4,6 +4,86 @@
 from typing import Optional, List
 
 
+# 区分度极低的「基调」标签：几乎人人都有，单独命中不构成有意义的相似。
+# 生成推荐理由时把它们从「核心匹配」里剔除，避免出现「仅凭正剧凑数」的假理由。
+GENERIC_MOOD_TAGS = frozenset({"正剧", "轻松", "温馨"})
+
+# 类型背景词归一化（category 第三段）
+_BACKGROUND_MAP = {
+    "近代现代": "现代",
+    "古色古香": "古代",
+    "架空历史": "架空",
+    "幻想未来": "未来",
+    "未来架空": "未来",
+    "上古先秦": "上古",
+    "二次元": "二次元",
+}
+
+
+def _parse_category(category: Optional[str]) -> tuple[str, str]:
+    """从 '原创-言情-近代现代-爱情' 解析出 (频道, 背景)，如 ('言情', '现代')。"""
+    if not category:
+        return "", ""
+    parts = [p for p in category.split("-") if p]
+    channel = parts[1] if len(parts) > 1 else ""
+    bg_raw = parts[2] if len(parts) > 2 else ""
+    return channel, _BACKGROUND_MAP.get(bg_raw, bg_raw)
+
+
+def _build_match_summary(
+    novel2: dict,
+    common_specific: List[str],
+    common_mood: List[str],
+    category_match: bool,
+    perspective_match: str,
+    author_match: str,
+    tag_sim: float,
+) -> str:
+    """把结构化的匹配信号合成一句「为什么相似」的人话，区分真重合与凑数。"""
+    lead: List[str] = []
+
+    if author_match:
+        lead.append(f"{author_match}的另一部作品")
+
+    cat_seg = ""
+    if category_match:
+        channel, bg = _parse_category(novel2.get("category"))
+        seg = f"{bg}{channel}".strip()
+        if seg:
+            cat_seg = f"同为{seg}文"
+
+    persp_seg = f"{perspective_match}视角叙事" if perspective_match else ""
+
+    if cat_seg and persp_seg:
+        lead.append(f"{cat_seg}、{persp_seg}")
+    elif cat_seg:
+        lead.append(cat_seg)
+    elif persp_seg:
+        lead.append(f"同为{persp_seg}")
+
+    if common_specific:
+        lead.append(f"都带「{'、'.join(common_specific[:3])}」")
+        if tag_sim > 0.5:
+            tail = "情节标签高度重合"
+        elif tag_sim > 0.2:
+            tail = "题材有明显重叠"
+        else:
+            tail = "题材部分相近"
+        if common_mood:
+            tail += f"，整体基调同为{'、'.join(common_mood[:2])}"
+        lead.append(tail)
+    else:
+        # 没有任何「实质题材标签」重合：诚实说明相似度有限，不夸大
+        if common_mood:
+            lead.append(
+                f"但情节标签几乎无重合，相似主要来自基调（{'、'.join(common_mood[:2])}），匹配度有限"
+            )
+        else:
+            lead.append("相似主要来自类型与视角，建议结合简介判断")
+
+    return "，".join(p for p in lead if p) + "。"
+
+
 def calculate_tag_similarity(tags1: Optional[str], tags2: Optional[str]) -> float:
     """
     计算两个标签字符串的Jaccard相似度
@@ -77,12 +157,13 @@ def calculate_multidimensional_similarity(
         weights: 权重配置字典，如 {"tags": 0.55, "category": 0.18, ...}
 
     Returns:
-        tuple: (相似度分数[0-100], 匹配原因列表)
+        tuple: (相似度分数[0-100], 匹配标签列表, 推荐理由整句)
 
     Example:
-        >>> similarity, reasons = calculate_multidimensional_similarity(novel1, novel2)
+        >>> similarity, reasons, summary = calculate_multidimensional_similarity(novel1, novel2)
         >>> print(f"相似度: {similarity}%")
-        >>> print(f"匹配原因: {reasons}")
+        >>> print(f"匹配标签: {reasons}")
+        >>> print(f"推荐理由: {summary}")
     """
     # 默认权重配置（完结状态已移除）
     default_weights = {
@@ -96,55 +177,71 @@ def calculate_multidimensional_similarity(
     w = weights or default_weights
 
     score = 0.0
-    reasons = []
 
+    # ── 打分逻辑保持不变，仅收集结构化信号用于生成理由 ──────────────
     # 1. 标签相似度
     tags1 = novel1.get("tags") or ""
     tags2 = novel2.get("tags") or ""
     tag_sim = calculate_tag_similarity(tags1, tags2)
 
+    common_specific: List[str] = []  # 有区分度的题材标签
+    common_mood: List[str] = []      # 低区分度的基调标签（正剧/轻松等）
     if tag_sim > 0:
         score += tag_sim * w["tags"]
-        # 找出共同标签
-        common_tags = list(set(tags1.split()) & set(tags2.split()))
-        if common_tags:
-            # 只显示前2个共同标签
-            tag_display = '、'.join(common_tags[:2])
-            if len(common_tags) > 2:
-                reasons.append(f"共同标签：{tag_display}等")
-            else:
-                reasons.append(f"共同标签：{tag_display}")
+        # 保留原始顺序，把共同标签分成「实质题材」与「基调」两类
+        seen = set(tags2.split())
+        for t in tags1.split():
+            if t in seen and t not in common_specific and t not in common_mood:
+                (common_mood if t in GENERIC_MOOD_TAGS else common_specific).append(t)
 
     # 2. 类型匹配
-    if novel1.get("category") and novel2.get("category"):
-        if novel1["category"] == novel2["category"]:
-            score += w["category"]
-            # 提取类型的关键词
-            category = novel2.get("category", "")
-            if category:
-                # 从类型中提取最后一个词作为核心类型
-                parts = category.split('-')
-                core_type = parts[-1] if parts else "相似类型"
-                reasons.append(f"同为{core_type}题材")
+    category_match = bool(
+        novel1.get("category")
+        and novel2.get("category")
+        and novel1["category"] == novel2["category"]
+    )
+    if category_match:
+        score += w["category"]
 
     # 3. 视角匹配
-    if novel1.get("perspective") and novel2.get("perspective"):
-        if novel1["perspective"] == novel2["perspective"]:
-            score += w["perspective"]
-            perspective = novel2.get("perspective", "")
-            reasons.append(f"{perspective}视角叙事")
+    perspective_match = ""
+    if (
+        novel1.get("perspective")
+        and novel2.get("perspective")
+        and novel1["perspective"] == novel2["perspective"]
+    ):
+        score += w["perspective"]
+        perspective_match = novel2["perspective"]
 
     # 4. 同作者加分
-    if novel1.get("author") and novel2.get("author"):
-        if novel1["author"] == novel2["author"]:
-            score += w["author"]
-            author = novel2.get("author", "")
-            reasons.append(f"{author}的其他作品")
+    author_match = ""
+    if novel1.get("author") and novel2.get("author") and novel1["author"] == novel2["author"]:
+        score += w["author"]
+        author_match = novel2["author"]
+
+    # ── 生成理由 ───────────────────────────────────────────────────
+    # chips：短标签药丸（前端最多显示 2 个），优先放有区分度的题材标签
+    reasons: List[str] = list(common_specific[:2])
+    if author_match and len(reasons) < 2:
+        reasons.append("同作者")
+    if not reasons:
+        if perspective_match:
+            reasons.append(f"{perspective_match}视角")
+        elif category_match:
+            reasons.append("同题材")
+        elif common_mood:
+            reasons.append(common_mood[0])
+
+    # summary：一句「为什么相似」的人话
+    summary = _build_match_summary(
+        novel2, common_specific, common_mood,
+        category_match, perspective_match, author_match, tag_sim,
+    )
 
     # 转换为百分比分数（0-100）
     final_score = score * 100
 
-    return final_score, reasons
+    return final_score, reasons, summary
 
 
 if __name__ == "__main__":
@@ -177,8 +274,9 @@ if __name__ == "__main__":
         "status": "完结"
     }
 
-    score, reasons = calculate_multidimensional_similarity(novel1, novel2)
+    score, reasons, summary = calculate_multidimensional_similarity(novel1, novel2)
     print(f"小说1: {novel1['title']}")
     print(f"小说2: {novel2['title']}")
     print(f"综合相似度: {score:.2f}%")
-    print(f"匹配原因: {', '.join(reasons)}")
+    print(f"匹配标签: {', '.join(reasons)}")
+    print(f"推荐理由: {summary}")

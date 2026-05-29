@@ -96,6 +96,11 @@
             </span>
           </div>
 
+          <!-- 推荐理由整句：解释「为什么相似」 -->
+          <p v-if="item.match_summary" class="match-summary">
+            {{ item.match_summary }}
+          </p>
+
           <!-- 元数据行 -->
           <div class="item-metadata">
             <span v-if="item.status" class="meta-status" :class="item.status === '完结' ? 'completed' : 'ongoing'">
@@ -659,6 +664,18 @@ const viewDetail = (novel) => {
 .shelf-item:hover .match-tag {
   background: rgba(212, 181, 176, 0.18);
   border-color: var(--color-accent-pink);
+}
+
+/* 推荐理由整句 */
+.match-summary {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* 元数据 */
