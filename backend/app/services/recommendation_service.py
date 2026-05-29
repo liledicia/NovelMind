@@ -1,6 +1,7 @@
 """
 推荐算法服务
 """
+import math
 import time
 import threading
 from typing import List, Dict, Optional, Tuple
@@ -92,6 +93,23 @@ def fetch_cover_if_missing(novel: Dict) -> Dict:
     return novel
 
 
+# ── 热度质量因子 ──────────────────────────────────────────────
+# 收藏量是最可靠的人气信号，跨度极大（0 ~ 数百万），用 log 归一化。
+# 因子范围约 [1.0, 1.15]：只做温和加权，相似度始终主导排序，
+# 相似度高的小众好文不会被人气碾压；缺统计的书取中性 1.0，不惩罚。
+_POPULARITY_BOOST = 0.15          # 最大加权幅度
+_POPULARITY_LOG_REF = 6.0         # log10(收藏量) 的参考上界（10^6 ≈ 顶级热门）
+
+
+def _quality_factor(novel: Dict) -> float:
+    """根据收藏量算一个 [1.0, 1+_POPULARITY_BOOST] 的温和排序加权因子。"""
+    fav = novel.get("favorite_count")
+    if not fav or fav <= 0:
+        return 1.0  # 未知/缺失 → 中性，不升不降
+    norm = min(math.log10(fav + 1) / _POPULARITY_LOG_REF, 1.0)
+    return 1.0 + _POPULARITY_BOOST * norm
+
+
 def fetch_stats_if_missing(novel: Dict) -> Dict:
     """
     检查小说统计数据，缺失则通过移动端 API 实时补全并写回数据库。
@@ -171,12 +189,18 @@ def get_recommendations(
             recommendations.append({
                 **candidate,
                 "similarity_score": round(similarity_score, 2),
+                # 排序用分 = 相似度 × 热度质量因子（不展示，仅用于排序）
+                "_rank_score": similarity_score * _quality_factor(candidate),
                 "match_reasons": match_reasons,
                 "match_summary": match_summary,
                 "url": f"https://www.jjwxc.net/onebook.php?novelid={candidate['book_id']}"
             })
 
-    recommendations.sort(key=lambda x: x["similarity_score"], reverse=True)
+    # 按「相似度 × 热度」排序：相似度主导，势均力敌时更受欢迎的书胜出
+    recommendations.sort(key=lambda x: x["_rank_score"], reverse=True)
+    # 内部排序字段不外泄给前端
+    for rec in recommendations:
+        rec.pop("_rank_score", None)
     return recommendations[:limit]
 
 
